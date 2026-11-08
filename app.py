@@ -126,9 +126,15 @@ with st.sidebar.form("add_form", clear_on_submit=True):
                 except Exception as e:
                     st.sidebar.warning(f"Image upload failed: {e}")
             
-            add_transaction(tx_date, tx_amount, tx_reason, screenshot_url)
-            st.sidebar.success("Transaction added successfully!")
-            st.rerun()
+            # Yahan return values ko capture karo!
+            success, err_msg = add_transaction(tx_date, tx_amount, tx_reason, screenshot_url)
+            
+            if success:
+                st.sidebar.success("Transaction added successfully!")
+                st.rerun()
+            else:
+                # Ab error screen par permanently dikhega aur gayab nahi hoga
+                st.sidebar.error(f"Error: {err_msg}")
 
 st.subheader("Search & Filter Transactions")
 f_col1, f_col2, f_col3 = st.columns(3)
