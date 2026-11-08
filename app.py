@@ -35,7 +35,6 @@ if "editing_tx" not in st.session_state:
 
 def fetch_transactions():
     try:
-        # Sort descending by date so recent ones appear on top
         url = f"{SUPABASE_URL}/rest/v1/transactions?select=*&order=date.desc,id.desc"
         response = requests.get(url, headers=HEADERS)
         if response.status_code == 200:
@@ -109,7 +108,6 @@ with col3:
 
 st.divider()
 
-# Edit Modal / Form Section if editing is active
 if st.session_state.editing_tx:
     st.sidebar.header("✏️ Edit Transaction")
     etx = st.session_state.editing_tx
@@ -156,7 +154,6 @@ if st.session_state.editing_tx:
             st.session_state.editing_tx = None
             st.rerun()
 else:
-    # Standard Add Form
     st.sidebar.header("Add New Transaction")
     with st.sidebar.form("add_form", clear_on_submit=True):
         tx_date = st.date_input("Date", value=datetime.today())
@@ -218,7 +215,6 @@ st.subheader("Transaction History (Latest First)")
 if not filtered_txs:
     st.info("No transactions found or database is empty. Add one using the sidebar!")
 else:
-    # Action buttons handled via Streamlit buttons below the table for seamless UX
     for idx, t in enumerate(filtered_txs):
         amt = t.get("amount", 0)
         row_bg = "#fef2f2" if amt >= 0 else "#f0fdf4"
@@ -239,7 +235,7 @@ else:
                     unsafe_allow_html=True
                 )
             with col_btns:
-                st.write("") # alignment spacing
+                st.write("")
                 edit_key = f"edit_{t.get('id')}_{idx}"
                 del_key = f"del_{t.get('id')}_{idx}"
                 
@@ -250,5 +246,3 @@ else:
                     delete_transaction(t.get("id"))
                     st.success("Deleted!")
                     st.rerun()
-
-iske sath dono requirements complete ho chuki hain. Isko update karke test kar lijiye, aur bataiye aage aur kya feature add karna hai!
