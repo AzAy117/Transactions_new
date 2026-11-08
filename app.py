@@ -34,10 +34,13 @@ def fetch_transactions():
     if supabase:
         try:
             response = supabase.table("transactions").select("*").order("date", desc=False).execute()
-            return response.data
+            # Ensure response.data is actually a list
+            if response.data and isinstance(response.data, list):
+                return response.data
+            return []
         except Exception as e:
             st.error(f"Database error: {e}")
-            return st.session_state.transactions
+            return []
     return st.session_state.transactions
 
 def add_transaction(date, amount, reason, screenshot=""):
@@ -75,9 +78,13 @@ st.markdown("Your secure personal transaction ledger and tracker.")
 
 transactions = fetch_transactions()
 
-total_income = sum(t["amount"] for t in transactions if t["amount"] > 0)
-total_expenses = sum(abs(t["amount"]) for t in transactions if t["amount"] < 0)
-net_balance = sum(t["amount"] for t in transactions)
+# Ensure transactions is always a list before running calculations
+if not isinstance(transactions, list):
+    transactions = []
+
+total_income = sum(t["amount"] for t in transactions if isinstance(t, dict) and t.get("amount", 0) > 0)
+total_expenses = sum(abs(t["amount"]) for t in transactions if isinstance(t, dict) and t.get("amount", 0) < 0)
+net_balance = sum(t["amount"] for t in transactions if isinstance(t, dict))
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -125,8 +132,9 @@ with f_col3:
 
 filtered_txs = [
     t for t in transactions 
-    if search_query.lower() in t["reason"].lower() 
-    and min_amt <= abs(t["amount"]) <= max_amt
+    if isinstance(t, dict) 
+    and search_query.lower() in str(t.get("reason", "")).lower() 
+    and min_amt <= abs(t.get("amount", 0)) <= max_amt
 ]
 
 if filtered_txs:
@@ -138,29 +146,31 @@ st.divider()
 st.subheader("Transaction History")
 
 if not filtered_txs:
-    st.info("No transactions found. Add one using the sidebar!")
+    st.info("No transactions found or database is empty. Add one using the sidebar!")
 else:
     table_html = '<div style="width: 100%; overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; background-color: white; font-family: sans-serif; font-size: 14px;"><thead><tr style="background-color: #f8f9fa; border-bottom: 2px solid #dee2e6;"><th style="padding: 12px; text-align: left;">Date</th><th style="padding: 12px; text-align: left;">Amount</th><th style="padding: 12px; text-align: left;">Type</th><th style="padding: 12px; text-align: left;">Reason</th><th style="padding: 12px; text-align: left;">Receipt</th></tr></thead><tbody>'
     
     for t in filtered_txs:
-        amt = t["amount"]
+        amt = t.get("amount", 0)
         row_bg = "#fef2f2" if amt >= 0 else "#f0fdf4"
         text_color = "#dc2626" if amt >= 0 else "#16a34a"
         type_label = "Gave (Sent)" if amt >= 0 else "Got (Received)"
-        date_display = str(t["date"]).split("T")[0]
-        receipt_html = f"<a href='{t['screenshot']}' target='_blank'>View</a>" if t.get("screenshot") else "No Image"
+        date_display = str(t.get("date", "")).split("T")[0]
+        screenshot = t.get("screenshot", "")
+        receipt_html = f"<a href='{screenshot}' target='_blank'>View</a>" if screenshot else "No Image"
         
-        table_html += f'<tr style="border-bottom: 1px solid #e5e7eb; background-color: {row_bg};"><td style="padding: 12px;">{date_display}</td><td style="padding: 12px; font-weight: bold; color: {text_color};">₹{amt:.2f}</td><td style="padding: 12px; color: {text_color};">{type_label}</td><td style="padding: 12px;">{t['reason']}</td><td style="padding: 12px;">{receipt_html}</td></tr>'
+        table_html += f'<tr style="border-bottom: 1px solid #e5e7eb; background-color: {row_bg};"><td style="padding: 12px;">{date_display}</td><td style="padding: 12px; font-weight: bold; color: {text_color};">₹{amt:.2f}</td><td style="padding: 12px; color: {text_color};">{type_label}</td><td style="padding: 12px;">{t.get("reason", "")}</td><td style="padding: 12px;">{receipt_html}</td></tr>'
         
     table_html += '</tbody></table></div>'
     st.markdown(table_html, unsafe_allow_html=True)
     
     st.write("")
     with st.expander("🗑️ Delete a Transaction"):
-        del_options = {f"{t['date']} | {t['reason']} | ₹{t['amount']}": t['id'] for t in filtered_txs}
-        selected_to_delete = st.selectbox("Select transaction to delete", options=list(del_options.keys()))
-        if st.button("Confirm Delete Selected"):
-            tx_id_to_del = del_options[selected_to_delete]
-            delete_transaction(tx_id_to_del)
-            st.success("Deleted successfully!")
-            st.rerun()
+        del_options = {f"{t.get('date')} | {t.get('reason')} | ₹{t.get('amount')}": t.get('id') for t in filtered_txs if t.get('id')}
+        if del_options:
+            selected_to_delete = st.selectbox("Select transaction to delete", options=list(del_options.keys()))
+            if st.button("Confirm Delete Selected"):
+                tx_id_to_del = del_options[selected_to_delete]
+                delete_transaction(tx_id_to_del)
+                st.success("Deleted successfully!")
+                st.rerun()
