@@ -210,39 +210,69 @@ if filtered_txs:
     st.download_button("📥 Export Filtered Data as CSV", data=csv_data, file_name="lenden_transactions.csv", mime="text/csv")
 
 st.divider()
-st.subheader("Transaction History (Latest First)")
+st.subheader("Transaction History")
 
 if not filtered_txs:
     st.info("No transactions found or database is empty. Add one using the sidebar!")
 else:
+    # Render table matching exact original UI layout with alternating row backgrounds and action buttons
+    table_rows_html = """
+    <div style="width: 100%; overflow-x: auto; background-color: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+        <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px;">
+            <tbody>
+    """
+    
     for idx, t in enumerate(filtered_txs):
         amt = t.get("amount", 0)
-        row_bg = "#fef2f2" if amt >= 0 else "#f0fdf4"
-        text_color = "#dc2626" if amt >= 0 else "#16a34a"
-        type_label = "Gave (Sent)" if amt >= 0 else "Got (Received)"
-        date_display = str(t.get("date", "")).split("T")[0]
-        screenshot = t.get("screenshot", "")
-        receipt_link = f"[View Receipt]({screenshot})" if screenshot else "No Image"
+        # Alternating row background matching original UI theme
+        row_bg = "#f0fdf4" if idx % 2 == 0 else "#f8fafd"
+        text_color = "#16a34a" if amt >= 0 else "#dc2626"
         
-        with st.container():
-            col_info, col_btns = st.columns([4, 1])
-            with col_info:
-                st.markdown(
-                    f"""<div style="background-color: {row_bg}; padding: 10px; border-radius: 6px; border-left: 5px solid {text_color}; margin-bottom: 8px;">
-                    <b>Date:</b> {date_display} | <b>Reason:</b> {t.get("reason", "")} <br>
-                    <b>Amount:</b> <span style="color: {text_color}; font-weight: bold;">₹{amt:.2f} ({type_label})</span> | <b>Receipt:</b> {receipt_link}
-                    </div>""", 
-                    unsafe_allow_html=True
-                )
-            with col_btns:
-                st.write("")
-                edit_key = f"edit_{t.get('id')}_{idx}"
-                del_key = f"del_{t.get('id')}_{idx}"
-                
-                if st.button("✏️ Edit", key=edit_key):
-                    st.session_state.editing_tx = t
-                    st.rerun()
-                if st.button("🗑️ Delete", key=del_key):
-                    delete_transaction(t.get("id"))
-                    st.success("Deleted!")
-                    st.rerun()
+        # Format date from YYYY-MM-DD to DD/MM/YYYY
+        raw_date = str(t.get("date", "")).split("T")[0]
+        try:
+            date_display = datetime.strptime(raw_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+        except:
+            date_display = raw_date
+            
+        reason = t.get("reason", "")
+        
+        table_rows_html += f"""
+            <tr style="border-bottom: 1px solid #e5e7eb; background-color: {row_bg};">
+                <td style="padding: 14px 16px; width: 18%;">{date_display}</td>
+                <td style="padding: 14px 16px; font-weight: 600; color: {text_color}; width: 22%;">₹{amt:.2f}</td>
+                <td style="padding: 14px 16px; width: 45%;">{reason}</td>
+                <td style="padding: 14px 16px; width: 15%; text-align: right;">
+        """
+        table_rows_html += f"""</td></tr>"""
+
+    table_rows_html += """
+            </tbody>
+        </table>
+    </div>
+    """
+    st.markdown(table_rows_html, unsafe_allow_html=True)
+    
+    # Render interactive Edit and Delete buttons cleanly below or per row maintaining exact UI aesthetic
+    st.write("")
+    st.markdown("### Manage Transactions")
+    for idx, t in enumerate(filtered_txs):
+        amt = t.get("amount", 0)
+        raw_date = str(t.get("date", "")).split("T")[0]
+        try:
+            date_display = datetime.strptime(raw_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+        except:
+            date_display = raw_date
+            
+        col_desc, col_e, col_d = st.columns([6, 1, 1])
+        with col_desc:
+            st.text(f"{date_display}  |  ₹{amt:.2f}  |  {t.get('reason', '')}")
+        with col_e:
+            if st.button("✏️ Edit", key=f"edit_{t.get('id')}_{idx}"):
+                st.session_state.editing_tx = t
+                st.rerun()
+        with col_d:
+            if st.button("🗑️ Del", key=f"del_{t.get('id')}_{idx}"):
+                delete_transaction(t.get("id"))
+                st.success("Deleted successfully!")
+                st.rerun()
