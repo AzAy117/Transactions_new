@@ -46,14 +46,17 @@ def fetch_transactions():
 def add_transaction(date, amount, reason, screenshot=""):
     if supabase:
         try:
+            supabase.table("transactions").insert({
             response = supabase.table("transactions").insert({
                 "date": str(date),
                 "amount": float(amount),
                 "reason": reason,
+                "screenshot": screenshot
                 "screenshot": ""
             }).execute()
             return True, None
         except Exception as e:
+            st.error(f"Failed to insert: {e}")
             return False, str(e)
     else:
         new_id = len(st.session_state.transactions) + 1
@@ -62,6 +65,7 @@ def add_transaction(date, amount, reason, screenshot=""):
             "date": str(date),
             "amount": float(amount),
             "reason": reason,
+            "screenshot": screenshot
             "screenshot": ""
         })
         return True, None
