@@ -19,7 +19,7 @@ st.markdown("""
 
 @st.cache_resource
 def init_supabase():
-    url = st.secrets.get("SUPABASE_URL", "https://supabase.com/dashboard/project/rxviyapbachsokbcongc")
+    url = st.secrets.get("SUPABASE_URL", "https://rxviyapbachsokbcongc.supabase.co")
     key = st.secrets.get("SUPABASE_KEY", "sb_publishable_ipPMI5mrbu0dn8psVkAjTQ_xbwGqMBk")
     if not url or not key:
         return None
