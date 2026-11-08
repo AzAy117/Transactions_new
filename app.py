@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from supabase import create_client, Client
+import requests
 
 st.set_page_config(
     page_title="Len-Den - Transaction Ledger",
@@ -17,77 +17,61 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-@st.cache_resource
-def init_supabase():
-    url = st.secrets.get("SUPABASE_URL", "https://rxviyapbachsokbcongc.supabase.co")
-    key = st.secrets.get("SUPABASE_KEY", "sb_publishable_ipPMI5mrbu0dn8psVkAjTQ_xbwGqMBk")
-    if not url or not key:
-        return None
-    return create_client(url, key)
+# Get Supabase Credentials securely from Streamlit secrets or hardcoded for testing
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", "https://rxviyapbachsokbcongc.supabase.co")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "sb_publishable_ipPMI5mrbu0dn8psVkAjTQ_xbwGqMBk")
 
-supabase = init_supabase()
+HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "return=representation"
+}
 
 if "transactions" not in st.session_state:
     st.session_state.transactions = []
 
 def fetch_transactions():
-    if supabase:
-        try:
-            response = supabase.table("transactions").select("*").order("date", desc=False).execute()
-            # Ensure response.data is actually a list
-            if response.data and isinstance(response.data, list):
-                return response.data
-            return []
-        except Exception as e:
-            st.error(f"Database error: {e}")
-            return []
-    return st.session_state.transactions
-
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/transactions?select=*&order=date.asc"
+        response = requests.get(url, headers=HEADERS)
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                return data
+        return []
+    except Exception as e:
+        st.error(f"Database error: {e}")
+        return []
 
 def add_transaction(date, amount, reason, screenshot=""):
-    if supabase:
-        try:
-            response = supabase.table("transactions").insert({
-                "date": str(date),
-                "amount": float(amount),
-                "reason": reason,
-                "screenshot": screenshot
-            }).execute()
-
-            return True, None
-
-        except Exception as e:
-            st.error(f"Failed to insert: {e}")
-            return False, str(e)
-
-    else:
-        new_id = len(st.session_state.transactions) + 1
-
-        st.session_state.transactions.append({
-            "id": new_id,
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/transactions"
+        payload = {
             "date": str(date),
             "amount": float(amount),
             "reason": reason,
             "screenshot": screenshot
-        })
-
-        return True, None
+        }
+        response = requests.post(url, headers=HEADERS, json=payload)
+        if response.status_code in [200, 201]:
+            return True, None
+        else:
+            return False, response.text
+    except Exception as e:
+        return False, str(e)
 
 def delete_transaction(tx_id):
-    if supabase:
-        try:
-            supabase.table("transactions").delete().eq("id", tx_id).execute()
-        except Exception as e:
-            st.error(f"Failed to delete: {e}")
-    else:
-        st.session_state.transactions = [t for t in st.session_state.transactions if t["id"] != tx_id]
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/transactions?id=eq.{tx_id}"
+        requests.delete(url, headers=HEADERS)
+    except Exception as e:
+        st.error(f"Failed to delete: {e}")
 
 st.title("💸 Len-Den")
 st.markdown("Your secure personal transaction ledger and tracker.")
 
 transactions = fetch_transactions()
-
-# Ensure transactions is always a list before running calculations
 if not isinstance(transactions, list):
     transactions = []
 
@@ -118,22 +102,26 @@ with st.sidebar.form("add_form", clear_on_submit=True):
             st.sidebar.error("Please enter a reason.")
         else:
             screenshot_url = ""
-            if tx_file and supabase:
+            if tx_file:
                 try:
                     file_path = f"receipts/{datetime.now().timestamp()}_{tx_file.name}"
-                    supabase.storage.from_("receipts").upload(file_path, tx_file.getvalue())
-                    screenshot_url = supabase.storage.from_("receipts").get_public_url(file_path)
+                    storage_url = f"{SUPABASE_URL}/storage/v1/object/receipts/{file_path}"
+                    storage_headers = {
+                        "apikey": SUPABASE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_KEY}",
+                        "Content-Type": tx_file.type
+                    }
+                    requests.post(storage_url, headers=storage_headers, data=tx_file.getvalue())
+                    screenshot_url = f"{SUPABASE_URL}/storage/v1/object/public/receipts/{file_path}"
                 except Exception as e:
                     st.sidebar.warning(f"Image upload failed: {e}")
             
-            # Yahan return values ko capture karo!
             success, err_msg = add_transaction(tx_date, tx_amount, tx_reason, screenshot_url)
             
             if success:
                 st.sidebar.success("Transaction added successfully!")
                 st.rerun()
             else:
-                # Ab error screen par permanently dikhega aur gayab nahi hoga
                 st.sidebar.error(f"Error: {err_msg}")
 
 st.subheader("Search & Filter Transactions")
