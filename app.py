@@ -215,7 +215,6 @@ st.subheader("Transaction History")
 if not filtered_txs:
     st.info("No transactions found or database is empty. Add one using the sidebar!")
 else:
-    # Render clean table rows with inline Edit and Delete buttons matching original aesthetic
     for idx, t in enumerate(filtered_txs):
         amt = t.get("amount", 0)
         row_bg = "#f0fdf4" if idx % 2 == 0 else "#f8fafd"
@@ -228,6 +227,7 @@ else:
             date_display = raw_date
             
         reason = t.get("reason", "")
+        tx_id = t.get('id', idx)
         
         with st.container():
             col_date, col_amt, col_reason, col_edit, col_del = st.columns([2, 2, 5, 0.7, 0.7])
@@ -238,4 +238,13 @@ else:
             with col_reason:
                 st.markdown(f"<div style='padding: 10px 0; color: #111827;'>{reason}</div>", unsafe_allow_html=True)
             with col_edit:
-                if st.button("✏️", key=f"edit_{t.get('
+                if st.button("✏️", key=f"edit_{tx_id}_{idx}", help="Edit Transaction"):
+                    st.session_state.editing_tx = t
+                    st.rerun()
+            with col_del:
+                if st.button("🗑️", key=f"del_{tx_id}_{idx}", help="Delete Transaction"):
+                    delete_transaction(tx_id)
+                    st.success("Deleted!")
+                    st.rerun()
+            
+            st.markdown(f"<div style='border-bottom: 1px solid #e5e7eb; margin-top: 2px; margin-bottom: 2px;'></div>", unsafe_allow_html=True)
