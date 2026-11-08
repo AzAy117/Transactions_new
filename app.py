@@ -17,7 +17,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Get Supabase Credentials securely from Streamlit secrets or hardcoded for testing
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "https://rxviyapbachsokbcongc.supabase.co")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "sb_publishable_ipPMI5mrbu0dn8psVkAjTQ_xbwGqMBk")
 
@@ -31,9 +30,13 @@ HEADERS = {
 if "transactions" not in st.session_state:
     st.session_state.transactions = []
 
+if "editing_tx" not in st.session_state:
+    st.session_state.editing_tx = None
+
 def fetch_transactions():
     try:
-        url = f"{SUPABASE_URL}/rest/v1/transactions?select=*&order=date.asc"
+        # Sort descending by date so recent ones appear on top
+        url = f"{SUPABASE_URL}/rest/v1/transactions?select=*&order=date.desc,id.desc"
         response = requests.get(url, headers=HEADERS)
         if response.status_code == 200:
             data = response.json()
@@ -55,6 +58,23 @@ def add_transaction(date, amount, reason, screenshot=""):
         }
         response = requests.post(url, headers=HEADERS, json=payload)
         if response.status_code in [200, 201]:
+            return True, None
+        else:
+            return False, response.text
+    except Exception as e:
+        return False, str(e)
+
+def update_transaction(tx_id, date, amount, reason, screenshot=""):
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/transactions?id=eq.{tx_id}"
+        payload = {
+            "date": str(date),
+            "amount": float(amount),
+            "reason": reason,
+            "screenshot": screenshot
+        }
+        response = requests.patch(url, headers=HEADERS, json=payload)
+        if response.status_code in [200, 204]:
             return True, None
         else:
             return False, response.text
@@ -89,40 +109,87 @@ with col3:
 
 st.divider()
 
-st.sidebar.header("Add New Transaction")
-with st.sidebar.form("add_form", clear_on_submit=True):
-    tx_date = st.date_input("Date", value=datetime.today())
-    tx_amount = st.number_input("Amount (Use negative for Received/Got)", value=0.0, step=1.00, format="%.2f")
-    tx_reason = st.text_input("Reason / Name")
-    tx_file = st.file_uploader("Upload Receipt / Screenshot", type=["png", "jpg", "jpeg"])
-    
-    submitted = st.form_submit_button("Add Transaction")
-    if submitted:
-        if not tx_reason:
-            st.sidebar.error("Please enter a reason.")
-        else:
-            screenshot_url = ""
-            if tx_file:
+# Edit Modal / Form Section if editing is active
+if st.session_state.editing_tx:
+    st.sidebar.header("✏️ Edit Transaction")
+    etx = st.session_state.editing_tx
+    with st.sidebar.form("edit_form"):
+        try:
+            default_date = datetime.strptime(etx.get("date", "2026-01-01").split("T")[0], "%Y-%m-%d").date()
+        except:
+            default_date = datetime.today().date()
+            
+        edit_date = st.date_input("Date", value=default_date)
+        edit_amount = st.number_input("Amount", value=float(etx.get("amount", 0.0)), step=1.00, format="%.2f")
+        edit_reason = st.text_input("Reason / Name", value=etx.get("reason", ""))
+        edit_file = st.file_uploader("Upload New Receipt (Optional)", type=["png", "jpg", "jpeg"])
+        
+        col_save, col_cancel = st.columns(2)
+        save_btn = col_save.form_submit_button("Save Changes")
+        cancel_btn = col_cancel.form_submit_button("Cancel")
+        
+        if save_btn:
+            screenshot_url = etx.get("screenshot", "")
+            if edit_file:
                 try:
-                    file_path = f"receipts/{datetime.now().timestamp()}_{tx_file.name}"
+                    file_path = f"receipts/{datetime.now().timestamp()}_{edit_file.name}"
                     storage_url = f"{SUPABASE_URL}/storage/v1/object/receipts/{file_path}"
                     storage_headers = {
                         "apikey": SUPABASE_KEY,
                         "Authorization": f"Bearer {SUPABASE_KEY}",
-                        "Content-Type": tx_file.type
+                        "Content-Type": edit_file.type
                     }
-                    requests.post(storage_url, headers=storage_headers, data=tx_file.getvalue())
+                    requests.post(storage_url, headers=storage_headers, data=edit_file.getvalue())
                     screenshot_url = f"{SUPABASE_URL}/storage/v1/object/public/receipts/{file_path}"
                 except Exception as e:
                     st.sidebar.warning(f"Image upload failed: {e}")
             
-            success, err_msg = add_transaction(tx_date, tx_amount, tx_reason, screenshot_url)
-            
+            success, err_msg = update_transaction(etx["id"], edit_date, edit_amount, edit_reason, screenshot_url)
             if success:
-                st.sidebar.success("Transaction added successfully!")
+                st.session_state.editing_tx = None
+                st.sidebar.success("Updated successfully!")
                 st.rerun()
             else:
                 st.sidebar.error(f"Error: {err_msg}")
+        
+        if cancel_btn:
+            st.session_state.editing_tx = None
+            st.rerun()
+else:
+    # Standard Add Form
+    st.sidebar.header("Add New Transaction")
+    with st.sidebar.form("add_form", clear_on_submit=True):
+        tx_date = st.date_input("Date", value=datetime.today())
+        tx_amount = st.number_input("Amount (Use negative for Received/Got)", value=0.0, step=1.00, format="%.2f")
+        tx_reason = st.text_input("Reason / Name")
+        tx_file = st.file_uploader("Upload Receipt / Screenshot", type=["png", "jpg", "jpeg"])
+        
+        submitted = st.form_submit_button("Add Transaction")
+        if submitted:
+            if not tx_reason:
+                st.sidebar.error("Please enter a reason.")
+            else:
+                screenshot_url = ""
+                if tx_file:
+                    try:
+                        file_path = f"receipts/{datetime.now().timestamp()}_{tx_file.name}"
+                        storage_url = f"{SUPABASE_URL}/storage/v1/object/receipts/{file_path}"
+                        storage_headers = {
+                            "apikey": SUPABASE_KEY,
+                            "Authorization": f"Bearer {SUPABASE_KEY}",
+                            "Content-Type": tx_file.type
+                        }
+                        requests.post(storage_url, headers=storage_headers, data=tx_file.getvalue())
+                        screenshot_url = f"{SUPABASE_URL}/storage/v1/object/public/receipts/{file_path}"
+                    except Exception as e:
+                        st.sidebar.warning(f"Image upload failed: {e}")
+                
+                success, err_msg = add_transaction(tx_date, tx_amount, tx_reason, screenshot_url)
+                if success:
+                    st.sidebar.success("Transaction added successfully!")
+                    st.rerun()
+                else:
+                    st.sidebar.error(f"Error: {err_msg}")
 
 st.subheader("Search & Filter Transactions")
 f_col1, f_col2, f_col3 = st.columns(3)
@@ -146,34 +213,42 @@ if filtered_txs:
     st.download_button("📥 Export Filtered Data as CSV", data=csv_data, file_name="lenden_transactions.csv", mime="text/csv")
 
 st.divider()
-st.subheader("Transaction History")
+st.subheader("Transaction History (Latest First)")
 
 if not filtered_txs:
     st.info("No transactions found or database is empty. Add one using the sidebar!")
 else:
-    table_html = '<div style="width: 100%; overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; background-color: white; font-family: sans-serif; font-size: 14px;"><thead><tr style="background-color: #f8f9fa; border-bottom: 2px solid #dee2e6;"><th style="padding: 12px; text-align: left;">Date</th><th style="padding: 12px; text-align: left;">Amount</th><th style="padding: 12px; text-align: left;">Type</th><th style="padding: 12px; text-align: left;">Reason</th><th style="padding: 12px; text-align: left;">Receipt</th></tr></thead><tbody>'
-    
-    for t in filtered_txs:
+    # Action buttons handled via Streamlit buttons below the table for seamless UX
+    for idx, t in enumerate(filtered_txs):
         amt = t.get("amount", 0)
         row_bg = "#fef2f2" if amt >= 0 else "#f0fdf4"
         text_color = "#dc2626" if amt >= 0 else "#16a34a"
         type_label = "Gave (Sent)" if amt >= 0 else "Got (Received)"
         date_display = str(t.get("date", "")).split("T")[0]
         screenshot = t.get("screenshot", "")
-        receipt_html = f"<a href='{screenshot}' target='_blank'>View</a>" if screenshot else "No Image"
+        receipt_link = f"[View Receipt]({screenshot})" if screenshot else "No Image"
         
-        table_html += f'<tr style="border-bottom: 1px solid #e5e7eb; background-color: {row_bg};"><td style="padding: 12px;">{date_display}</td><td style="padding: 12px; font-weight: bold; color: {text_color};">₹{amt:.2f}</td><td style="padding: 12px; color: {text_color};">{type_label}</td><td style="padding: 12px;">{t.get("reason", "")}</td><td style="padding: 12px;">{receipt_html}</td></tr>'
-        
-    table_html += '</tbody></table></div>'
-    st.markdown(table_html, unsafe_allow_html=True)
-    
-    st.write("")
-    with st.expander("🗑️ Delete a Transaction"):
-        del_options = {f"{t.get('date')} | {t.get('reason')} | ₹{t.get('amount')}": t.get('id') for t in filtered_txs if t.get('id')}
-        if del_options:
-            selected_to_delete = st.selectbox("Select transaction to delete", options=list(del_options.keys()))
-            if st.button("Confirm Delete Selected"):
-                tx_id_to_del = del_options[selected_to_delete]
-                delete_transaction(tx_id_to_del)
-                st.success("Deleted successfully!")
-                st.rerun()
+        with st.container():
+            col_info, col_btns = st.columns([4, 1])
+            with col_info:
+                st.markdown(
+                    f"""<div style="background-color: {row_bg}; padding: 10px; border-radius: 6px; border-left: 5px solid {text_color}; margin-bottom: 8px;">
+                    <b>Date:</b> {date_display} | <b>Reason:</b> {t.get("reason", "")} <br>
+                    <b>Amount:</b> <span style="color: {text_color}; font-weight: bold;">₹{amt:.2f} ({type_label})</span> | <b>Receipt:</b> {receipt_link}
+                    </div>""", 
+                    unsafe_allow_html=True
+                )
+            with col_btns:
+                st.write("") # alignment spacing
+                edit_key = f"edit_{t.get('id')}_{idx}"
+                del_key = f"del_{t.get('id')}_{idx}"
+                
+                if st.button("✏️ Edit", key=edit_key):
+                    st.session_state.editing_tx = t
+                    st.rerun()
+                if st.button("🗑️ Delete", key=del_key):
+                    delete_transaction(t.get("id"))
+                    st.success("Deleted!")
+                    st.rerun()
+
+iske sath dono requirements complete ho chuki hain. Isko update karke test kar lijiye, aur bataiye aage aur kya feature add karna hai!
